@@ -1,0 +1,112 @@
+import nltk
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+import string
+import streamlit as st
+import fitz  # PyMuPDF
+import tempfile
+import os
+
+# Load NLTK resources
+def setup_nltk():
+    nltk.download('punkt')
+    nltk.download('averaged_perceptron_tagger')
+    nltk.download('stopwords')
+    nltk.download('wordnet')
+
+# Charger et prétraiter le fichier PDF
+def load_and_preprocess(pdf_file):
+    # Enregistrer temporairement le fichier PDF téléchargé
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_path = os.path.join(temp_dir.name, "temp.pdf")
+    with open(temp_path, "wb") as temp_pdf:
+        temp_pdf.write(pdf_file.read())
+
+    # Ouvrir le fichier PDF temporaire avec fitz
+    with fitz.open(temp_path) as pdf_document:
+        # Itérer à travers les pages et extraire le texte
+        text = ''
+        for page_number in range(pdf_document.page_count):
+            page = pdf_document[page_number]
+            text += page.get_text()
+
+    # Fermer et nettoyer le répertoire temporaire
+    temp_dir.cleanup()
+
+    # À présent, 'text' contient le contenu textuel du PDF
+    data = text.replace('\n', ' ')
+    return data
+
+# Tokeniser le texte en phrases
+def tokenize_sentences(data):
+    return sent_tokenize(data)
+
+# Prétraiter chaque phrase dans le texte
+def preprocess(sentence):
+    lemmatizer = WordNetLemmatizer()
+    sentence = lemmatizer.lemmatize(sentence)
+
+    words = word_tokenize(sentence)
+
+    words = [word.lower() for word in words if word.lower() not in stopwords.words('french') and word not in string.punctuation]
+
+    return words
+
+# Prétraiter l'ensemble du texte
+def preprocess_corpus(sentences):
+    return [preprocess(sentence) for sentence in sentences]
+
+# Définir une fonction pour trouver la phrase la plus pertinente pour une requête
+def get_most_relevant_sentence(query, corpus):
+    # Prétraiter la requête
+    query = preprocess(query)
+
+    # Calculer la similarité entre la requête et chaque phrase du texte
+    max_similarity = 0
+    most_relevant_sentence = ""
+
+    for sentence in corpus:
+        similarity = len(set(query).intersection(sentence)) / float(len(set(query).union(sentence)))
+        if similarity > max_similarity:
+            max_similarity = similarity
+            most_relevant_sentence = " ".join(sentence)
+
+    return most_relevant_sentence
+
+# Fonction du chatbot
+def chatbot(question, corpus):
+    # Trouver la phrase la plus pertinente
+    most_relevant_sentence = get_most_relevant_sentence(question, corpus)
+
+    # Renvoyer la réponse
+    return most_relevant_sentence
+
+# Application Streamlit
+def main():
+    st.title("Chatbot")
+    st.write("Bonjour ! Je suis un chatbot. Posez-moi des questions sur le sujet du fichier PDF.")
+
+    # Charger les ressources NLTK
+    setup_nltk()
+
+    # Uploader de fichier pour PDF
+    pdf_file = st.file_uploader("Téléchargez le fichier PDF", type=["pdf"])
+
+    if pdf_file:
+        # Charger et prétraiter le texte PDF
+        data = load_and_preprocess(pdf_file)
+        sentences = tokenize_sentences(data)
+        corpus = preprocess_corpus(sentences)
+
+        # Obtenir la question de l'utilisateur
+        question = st.text_input("Vous :")
+
+        # Créer un bouton pour soumettre la question
+        if st.button("Soumettre"):
+            # Appeler la fonction du chatbot avec la question et le corpus
+            response = chatbot(question, corpus)
+            st.write("Chatbot : " + response)
+      
+if __name__ == "__main__":
+    main()
